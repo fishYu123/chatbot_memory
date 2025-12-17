@@ -1,0 +1,15 @@
+source_id,target_id,relation_type,name
+p1,p2,FATHER,爸爸
+p1,p3,MOTHER,妈妈
+p1,p4,GRANDFATHER,爷爷
+p1,p5,GRANDMOTHER,奶奶
+p1,i1,LIKE,喜欢
+p1,i3,LIKE,喜欢
+p1,i2,HATE,讨厌
+p1,i4,HATE,讨厌
+p1,i5,HATE,讨厌
+p3,i2,LIKE,喜欢
+p4,i1,LIKE,喜欢
+p1,e1,PARTICIPATED,参与
+p2,e1,PARTICIPATED,参与
+p1,e2,PARTICIPATED,参与

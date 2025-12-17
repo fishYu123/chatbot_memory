@@ -1,0 +1,13 @@
+id,label,name,gender,birthday,description,date,location
+p1,Person,安安,男,2019-05-20,,,
+p2,Person,张伟,男,1988-03-15,,,
+p3,Person,李娜,女,1990-08-10,,,
+p4,Person,张建国,男,1960-01-01,,,
+p5,Person,王淑芬,女,1962-12-12,,,
+i1,Item,奥特曼,,,,,
+i2,Item,西兰花,,,,,
+i3,Item,巧克力冰淇淋,,,,,
+i4,Item,大黑狗,,,,,
+i5,Item,打针,,,,,
+e1,Event,,,,"全家去动物园看老虎",2023-10-01,野生动物园
+e2,Event,,,,"安安发烧去医院",2023-11-15,儿童医院
