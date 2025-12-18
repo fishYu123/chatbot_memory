@@ -118,8 +118,19 @@ for _, row in nodes.iterrows():
         })
 
 print("正在处理关系数据...")
+relation_dueplicate = {
+    
+}
 for _, row in relations.iterrows():
     uuid = row['id']
+    
+    relation_name = row['name']
+    if relation_name not in relation_dueplicate:
+        relation_dueplicate[relation_name] = uuid
+    else:
+        continue
+    
+    
     # 关系取 'name' (例如: 喜欢, 爸爸, 参与)
     if pd.notna(row['name']):
         content_text = str(row['name'])
