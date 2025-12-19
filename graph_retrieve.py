@@ -4,9 +4,10 @@ import torch
 from neo4j import GraphDatabase
 
 class GraphRetriever:
-    def __init__(self, milvus_clent, collection_name, embedding_model, neo4j_uri, neo4j_auth):
-        self.milvus_client = milvus_clent
+    def __init__(self, milvus_client, collection_name, embedding_model, neo4j_uri, neo4j_auth):
+        self.milvus_client = milvus_client
         self.embedding_model = embedding_model
+        self.collection_name = collection_name
         self.driver = GraphDatabase.driver(neo4j_uri, auth=neo4j_auth)
     
     def close(self):
@@ -49,8 +50,8 @@ class GraphRetriever:
         )
 
         # 4. 执行混合检索 (Hybrid Search)
-        results = milvus_client.hybrid_search(
-            collection_name=collection_name,
+        results = self.milvus_client.hybrid_search(
+            collection_name=self.collection_name,
             reqs=[req_dense, req_sparse],    # 传入两个请求
             ranker=RRFRanker(),              # 使用 RRF 算法进行结果融合重排序
             limit=k,
@@ -71,13 +72,24 @@ class GraphRetriever:
         # 辅助函数：格式化属性字典为字符串
         def format_props(node_name, props):
             if not props: return None
-            # 过滤掉非业务属性
-            ignore_keys = ['id', 'label', 'dense_vector', 'sparse_vector']
+            # 过滤掉非业务属性（根据你的实际情况增减）
+            ignore_keys = ['id', 'label', 'dense_vector', 'sparse_vector', 'name', 'description']
+            # 注意：我把 name 和 description 也过滤了，因为它们通常直接用于节点指代，
+            # 剩下的才是需要补充的“详情属性” (比如 age, color, time 等)
+            
             clean_props = {k: v for k, v in props.items() if k not in ignore_keys and v}
             if not clean_props: return None
             
-            props_str = ", ".join([f"{k}是{v}" for k, v in clean_props.items()])
-            return f"详情: {node_name} 的属性包括 [{props_str}]"
+            props_str = ", ".join([f"{k}: {v}" for k, v in clean_props.items()])
+            return f"详情: [{node_name}] 的属性包含: {{{props_str}}}"
+        
+        # 辅助函数：获取节点显示名称 (优先 name, 其次 description, 最后 Unknown)
+        def get_display_name(record, prefix):
+            # prefix e.g., "start" or "end" or "center" or "neighbor"
+            name = record.get(f'{prefix}_name')
+            if not name:
+                name = record.get(f'{prefix}_desc')
+            return name if name else "未知节点"
 
         with self.driver.session() as session:
             for uid in retrieved_ids:
@@ -137,7 +149,7 @@ class GraphRetriever:
                 # 策略 2: 处理关系 ID (Relation Expansion)
                 # ==========================================
                 if not is_node:
-                    # 1. 查名字
+                    # 1. 先查这个 ID 对应的关系名字或类型
                     rel_name_cypher = "MATCH ()-[r {id: $uid}]->() RETURN r.name as name, type(r) as type LIMIT 1"
                     rel_check = session.run(rel_name_cypher, uid=uid).single()
                     
@@ -145,13 +157,22 @@ class GraphRetriever:
                         target_name = rel_check['name']
                         target_type = rel_check['type']
                         
-                        # 2. 查全图所有同类型关系
+                        # 2. 查全图所有同类型关系，并返回头尾节点的 properties
                         if target_name:
                             # 匹配中文名
                             expand_all_rel_cypher = """
                             MATCH (a)-[r]->(b)
                             WHERE r.name = $target_name
-                            RETURN a.name as start, r.name as rel, b.name as end, b.description as end_desc
+                            RETURN 
+                                a.name as start_name, 
+                                a.description as start_desc,
+                                properties(a) as start_props,  
+                                
+                                r.name as rel, 
+                                
+                                b.name as end_name, 
+                                b.description as end_desc,
+                                properties(b) as end_props     
                             """
                             params = {"target_name": target_name}
                         else:
@@ -159,20 +180,40 @@ class GraphRetriever:
                             expand_all_rel_cypher = """
                             MATCH (a)-[r]->(b)
                             WHERE type(r) = $target_type
-                            RETURN a.name as start, type(r) as rel, b.name as end, b.description as end_desc
+                            RETURN 
+                                a.name as start_name, 
+                                a.description as start_desc,
+                                properties(a) as start_props,  
+                                
+                                type(r) as rel, 
+                                
+                                b.name as end_name, 
+                                b.description as end_desc,
+                                properties(b) as end_props     
                             """
                             params = {"target_type": target_type}
                             
                         all_rels_res = session.run(expand_all_rel_cypher, **params)
                         
                         for record in all_rels_res:
-                            s = record['start']
-                            r = record['rel']
-                            e = record['end'] if record['end'] else record['end_desc']
-                            contexts.append(f"事实: {s} {r} {e}")
+                            # --- A. 构建事实 ---
+                            s_name = get_display_name(record, 'start')
+                            e_name = get_display_name(record, 'end')
+                            r_name = record['rel']
+                            
+                            contexts.append(f"事实: {s_name} {r_name} {e_name}")
+                            
+                            # --- B. 构建属性详情 ---
+                            s_props_str = format_props(s_name, record['start_props'])
+                            if s_props_str: contexts.append(s_props_str)
+                            
+                            e_props_str = format_props(e_name, record['end_props'])
+                            if e_props_str: contexts.append(e_props_str)
                             
         # 去重并返回
         return list(set(contexts))
+    
+
     
     def retrieve_with_graph(self, query, k=3):
         # 1. 向量检索找到入口
